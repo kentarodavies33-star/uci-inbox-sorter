@@ -273,7 +273,8 @@ def build_summary(results, when=None):
 
 
 def send_summary(service, subject, body):
-    """Email the summary to yourself, and mark it processed so it's never sorted."""
+    """Email the summary to yourself, and mark it processed so it's never sorted.
+    Gmail marks emails you send yourself as read, so add UNREAD to get a notification."""
     me = service.users().getProfile(userId="me").execute()["emailAddress"]
     msg = MIMEText(body)
     msg["to"] = me
@@ -283,7 +284,7 @@ def send_summary(service, subject, body):
     sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
     processed = ensure_labels(service, [PROCESSED_LABEL])[PROCESSED_LABEL]
     service.users().messages().modify(
-        userId="me", id=sent["id"], body={"addLabelIds": [processed]}).execute()
+        userId="me", id=sent["id"], body={"addLabelIds": [processed, "UNREAD"]}).execute()
 
 
 def notify_mac(message):
