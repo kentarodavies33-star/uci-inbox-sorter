@@ -1,5 +1,7 @@
 # UCI Inbox Sorter
 
+![UCI Inbox Sorter: automated email triage and phishing detection for UC Irvine students](docs/cover.png)
+
 **An inbox cleaner made for UC Irvine students.** If your @uci.edu inbox is buried
 in club emails, campus newsletters, promotions and fake job offers, this sorts it
 for you every morning.
