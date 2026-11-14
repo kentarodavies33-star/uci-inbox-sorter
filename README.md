@@ -70,6 +70,45 @@ Nothing was changed. Run again with --apply to sort for real.
 - **Trusted senders.** Canvas digests were being flagged as scams because their Reply-To
   is `canvaslms.com`, so known services skip the scam check.
 
+## Daily schedule + summary email
+The sorter can run on its own every morning and email you a summary like this:
+
+```
+Subject: UCI Sorter: 14 sorted, 1 possible scam
+
+Sorted 14 new emails (9 archived, 5 left in your inbox):
+  - Mass Mail: 7
+  - Important: 3
+  - Clubs & Events: 2
+  - Possible Scam: 1
+  - Keep in inbox: 1
+
+POSSIBLE SCAMS (still in your inbox - don't reply, click links or send money):
+  - Part-time job opportunity  (from jlee.office22@gmail.com; scam score 6: ...)
+
+Important:
+  - Assignment Graded: Quiz 4
+  ...
+```
+
+It uses macOS **launchd**, the scheduler built into every Mac, so nothing extra needs to be installed.
+```bash
+bash schedule/install.sh          # every day at 8:00 AM
+bash schedule/install.sh 21 30    # or pick a time (9:30 PM)
+launchctl kickstart gui/$(id -u)/local.uci-inbox-sorter   # run it right now to test
+bash schedule/uninstall.sh        # turn it off
+```
+- Scheduled runs use `--scheduled`, which means `--apply --email-summary --max 500`.
+  They never open a browser. If the sign-in has expired, you get a Mac notification
+  instead of a stuck job.
+- If the Mac is asleep at the scheduled time, the job runs as soon as it wakes up.
+- Output goes to `logs/sorter.log`.
+- The summary is sent to your own address and marked as processed, so the sorter never sorts it.
+- **Tip:** in Google Cloud's *Testing* mode, sign-ins expire every 7 days. For hands-off
+  daily runs, set the OAuth consent screen to **In production**. For a personal app you
+  don't need Google's verification; you'll just click through an "unverified app" warning
+  once when you sign in again.
+
 ## Safety and privacy
 - **Dry run by default.** Nothing changes unless you pass `--apply`.
 - **Never deletes anything.** It only adds labels and archives, and both are reversible in Gmail.
@@ -97,6 +136,7 @@ the sign-in expires after about 7 days. If sign-in fails, delete `token.json` an
 python sorter.py                     # dry run: shows what it WOULD do
 python sorter.py --apply             # actually labels and archives
 python sorter.py --apply --max 1000  # first run on a big inbox (default is 50)
+python sorter.py --email-summary     # also email yourself a summary
 pytest                               # run the tests
 ```
 
@@ -108,17 +148,17 @@ touching any code:
 - `has_unsubscribe`: match emails that have a List-Unsubscribe header
 
 ## Testing
-The project has 17 `pytest` tests. Several of them come straight from misclassifications
+The project has 19 `pytest` tests (including the summary email). Several of them come straight from misclassifications
 in my real inbox: the Canvas scam false positive, a missed Gradescope email, a curly-apostrophe
 "You’re invited", a reply that was being archived, and Police alerts that have an
 unsubscribe link.
 
 ## Tech
-Python · Gmail API · OAuth 2.0 · pytest
+Python · Gmail API · OAuth 2.0 · pytest · macOS launchd
 
 ## Roadmap
 - [x] Rule-based sorting and scam scoring
 - [x] Tested on a real inbox (1,194 emails)
-- [ ] Run automatically on a schedule (launchd)
-- [ ] Daily summary email ("14 sorted, 1 possible scam")
+- [x] Run automatically every day (launchd)
+- [x] Daily summary email ("14 sorted, 1 possible scam")
 - [ ] Machine-learning classifier (scikit-learn) trained on the emails it has already labeled

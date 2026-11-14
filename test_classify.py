@@ -127,3 +127,40 @@ def test_scam_reply_is_still_flagged():
     e = make("Professor James Lee <jlee.office22@gmail.com>", "RE: Part-time job opportunity",
              "Dear student, I need a remote assistant. $400 per week. Kindly text me.")
     assert category(e) == "Possible Scam"
+
+
+# --- Daily summary email
+
+from datetime import datetime
+
+from sorter import build_summary
+
+WHEN = datetime(2026, 11, 14, 8, 0)
+
+
+def result(email):
+    cat, reason = classify(email, RULES)
+    name = cat["name"] if cat else "Keep in inbox"
+    return (email, name, reason, bool(cat and cat.get("archive")))
+
+
+def test_summary_counts_and_scam_warning():
+    results = [
+        result(make("Canvas <notifications@instructure.com>", "ICS 31: Assignment 3 posted")),
+        result(make("ASUCI <asuci@uci.edu>", "Free food at the Student Center!")),
+        result(make("Professor James Lee <jlee.office22@gmail.com>", "Part-time job opportunity",
+                    "Dear student, I need a remote assistant. $400 per week. Kindly text me.")),
+    ]
+    subject, body = build_summary(results, WHEN)
+    assert subject == "UCI Sorter: 3 sorted, 1 possible scam"
+    assert "Sorted 3 new emails (1 archived, 2 left in your inbox)" in body
+    assert "POSSIBLE SCAMS" in body and "jlee.office22@gmail.com" in body
+    assert "ICS 31: Assignment 3 posted" in body  # listed under Important
+    assert "Sat Nov 14, 2026 at 8:00 AM" in body
+
+
+def test_summary_with_no_new_email():
+    subject, body = build_summary([], WHEN)
+    assert subject == "UCI Sorter: 0 sorted"
+    assert "No new emails" in body
+    assert "POSSIBLE SCAMS" not in body

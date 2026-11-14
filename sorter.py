@@ -8,10 +8,15 @@ Runs as a DRY RUN by default. Add --apply to actually change your inbox.
 """
 
 import argparse
+import base64
 import json
 import os
 import re
+import subprocess
+import sys
 from collections import Counter
+from datetime import datetime
+from email.mime.text import MIMEText
 from email.utils import parseaddr
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
@@ -21,8 +26,16 @@ HEADERS = ["From", "Reply-To", "Subject", "List-Unsubscribe"]
 
 # ---------------------------------------------------------------- Gmail access
 
-def get_service():
-    """Log in with OAuth (opens a browser the first time) and return a Gmail client."""
+class LoginNeeded(Exception):
+    """Raised in scheduled mode when a browser sign-in would be needed."""
+
+
+def get_service(interactive=True):
+    """Log in with OAuth (opens a browser the first time) and return a Gmail client.
+
+    With interactive=False (scheduled runs) it never opens a browser: if the saved
+    login is missing or expired for good, it raises LoginNeeded instead of hanging.
+    """
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -32,9 +45,17 @@ def get_service():
     if os.path.exists("token.json"):
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
     if not creds or not creds.valid:
+        refreshed = False
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            try:
+                creds.refresh(Request())
+                refreshed = True
+            except Exception as err:  # refresh token expired or revoked
+                if not interactive:
+                    raise LoginNeeded(f"saved login no longer works ({err})")
+        if not refreshed:
+            if not interactive:
+                raise LoginNeeded("no valid saved login (token.json)")
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
         with open("token.json", "w") as f:
@@ -183,6 +204,94 @@ def classify(email, rules):
     return None, "no rule matched"
 
 
+# ---------------------------------------------------------------- Sorting
+
+def sort_inbox(service, rules, max_messages, apply):
+    """Classify new inbox emails (and label/archive them if apply=True).
+    Returns a list of (email, category_name, reason, archived)."""
+    ids = list_new_message_ids(service, max_messages)
+    label_ids = {}
+    if apply and ids:
+        names = [c["label"] for c in rules["categories"]]
+        names += [rules["scam"]["label"], PROCESSED_LABEL]
+        label_ids = ensure_labels(service, names)
+
+    results = []
+    for mid in ids:
+        email = fetch_email(service, mid)
+        cat, reason = classify(email, rules)
+        name = cat["name"] if cat else "Keep in inbox"
+        archived = bool(cat and cat.get("archive"))
+        results.append((email, name, reason, archived))
+        print(f"[{name:<15}] {email['subject'][:55]:<55} <- {reason}")
+
+        if apply:
+            add, remove = [label_ids[PROCESSED_LABEL]], []
+            if cat:
+                add.append(label_ids[cat["label"]])
+                if archived:
+                    remove.append("INBOX")
+            service.users().messages().modify(
+                userId="me", id=mid,
+                body={"addLabelIds": add, "removeLabelIds": remove},
+            ).execute()
+    return results
+
+
+# ---------------------------------------------------------------- Daily summary email
+
+def build_summary(results, when=None):
+    """Turn sort results into (subject, body) for the daily summary email."""
+    when = when or datetime.now()
+    counts = Counter(name for _, name, _, _ in results)
+    archived = sum(1 for *_, a in results if a)
+    scams = [(e, r) for e, n, r, _ in results if n == "Possible Scam"]
+    important = [e for e, n, _, _ in results if n == "Important"]
+
+    subject = f"UCI Sorter: {len(results)} sorted"
+    if scams:
+        subject += f", {len(scams)} possible scam" + ("s" if len(scams) > 1 else "")
+
+    lines = [f"UCI Inbox Sorter - daily summary for {when:%a %b %-d, %Y at %-I:%M %p}", ""]
+    if not results:
+        lines.append("No new emails since the last run.")
+    else:
+        lines.append(f"Sorted {len(results)} new emails "
+                     f"({archived} archived, {len(results) - archived} left in your inbox):")
+        for name, n in counts.most_common():
+            lines.append(f"  - {name}: {n}")
+    if scams:
+        lines += ["", "POSSIBLE SCAMS (still in your inbox - don't reply, click links or send money):"]
+        for e, reason in scams:
+            lines.append(f"  - {e['subject']}  (from {e['from_addr']}; {reason})")
+    if important:
+        lines += ["", "Important:"]
+        lines += [f"  - {e['subject']}" for e in important]
+    if archived:
+        lines += ["", "Archived emails are under the 'UCI Sorter' labels in Gmail. Nothing was deleted."]
+    return subject, "\n".join(lines) + "\n"
+
+
+def send_summary(service, subject, body):
+    """Email the summary to yourself, and mark it processed so it's never sorted."""
+    me = service.users().getProfile(userId="me").execute()["emailAddress"]
+    msg = MIMEText(body)
+    msg["to"] = me
+    msg["from"] = me
+    msg["subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    processed = ensure_labels(service, [PROCESSED_LABEL])[PROCESSED_LABEL]
+    service.users().messages().modify(
+        userId="me", id=sent["id"], body={"addLabelIds": [processed]}).execute()
+
+
+def notify_mac(message):
+    """Show a macOS notification (used when a scheduled run can't email you)."""
+    script = f'display notification {json.dumps(message)} with title "UCI Inbox Sorter"'
+    subprocess.run(["osascript", "-e", script], check=False)
+
+
 # ---------------------------------------------------------------- Main
 
 def main():
@@ -191,48 +300,47 @@ def main():
                    help="Actually label/archive emails (default is a dry run).")
     p.add_argument("--max", type=int, default=50, help="Max emails to process.")
     p.add_argument("--rules", default="rules.json")
+    p.add_argument("--email-summary", action="store_true",
+                   help="Email yourself a summary of this run.")
+    p.add_argument("--scheduled", action="store_true",
+                   help="For the daily schedule: --apply --email-summary --max 500, "
+                        "and never open a browser to sign in.")
     args = p.parse_args()
+    if args.scheduled:
+        args.apply, args.email_summary, args.max = True, True, max(args.max, 500)
+
+    # Work from the project folder, so token.json etc. are found from any location.
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    if args.scheduled:
+        print(f"\n===== Scheduled run {datetime.now():%Y-%m-%d %H:%M}")
 
     with open(args.rules) as f:
         rules = json.load(f)
 
-    service = get_service()
-    ids = list_new_message_ids(service, args.max)
-    if not ids:
+    try:
+        service = get_service(interactive=not args.scheduled)
+    except LoginNeeded as err:
+        print(f"Login needed: {err}")
+        notify_mac("Sign-in expired. Run: .venv/bin/python sorter.py  (in the project folder)")
+        sys.exit(1)
+
+    print(("APPLYING" if args.apply else "DRY RUN") + "\n")
+    results = sort_inbox(service, rules, args.max, args.apply)
+    if not results:
         print("No new emails to sort.")
-        return
 
-    label_ids = {}
-    if args.apply:
-        names = [c["label"] for c in rules["categories"]]
-        names += [rules["scam"]["label"], PROCESSED_LABEL]
-        label_ids = ensure_labels(service, names)
-
-    print(("APPLYING" if args.apply else "DRY RUN") + f" - {len(ids)} emails\n")
-    counts = Counter()
-    for mid in ids:
-        email = fetch_email(service, mid)
-        cat, reason = classify(email, rules)
-        name = cat["name"] if cat else "Keep in inbox"
-        counts[name] += 1
-        print(f"[{name:<15}] {email['subject'][:55]:<55} <- {reason}")
-
-        if args.apply:
-            add, remove = [label_ids[PROCESSED_LABEL]], []
-            if cat:
-                add.append(label_ids[cat["label"]])
-                if cat.get("archive"):
-                    remove.append("INBOX")
-            service.users().messages().modify(
-                userId="me", id=mid,
-                body={"addLabelIds": add, "removeLabelIds": remove},
-            ).execute()
-
-    print("\nSummary:")
-    for name, n in counts.most_common():
-        print(f"  {name}: {n}")
+    counts = Counter(name for _, name, _, _ in results)
+    if results:
+        print("\nSummary:")
+        for name, n in counts.most_common():
+            print(f"  {name}: {n}")
     if not args.apply:
         print("\nNothing was changed. Run again with --apply to sort for real.")
+
+    if args.email_summary:
+        subject, body = build_summary(results)
+        send_summary(service, subject, body)
+        print(f"\nSummary email sent: {subject}")
 
 
 if __name__ == "__main__":
