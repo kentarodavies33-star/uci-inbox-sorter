@@ -1,8 +1,18 @@
 # UCI Inbox Sorter
 
-A Python tool that cleans up a UC Irvine student Gmail inbox through the Gmail API.
-Class emails and anything important stay in the inbox. Club spam and mass mail get
-labeled and archived. Likely phishing and fake-job emails get flagged.
+**An inbox cleaner made for UC Irvine students.** If your @uci.edu inbox is buried
+in club emails, campus newsletters, promotions and fake job offers, this sorts it
+for you every morning.
+
+- 📚 **Canvas, Gradescope and class emails stay in your inbox**, labeled Important
+- 📦 **Club emails and mass mail get labeled and archived**, out of the way but never deleted
+- ⚠️ **Likely scams get flagged**, including the "remote assistant, $400/week" job scams
+  that hit UCI accounts
+- 🚨 **zotALERT emergency alerts and replies to your own emails always stay in your inbox**
+- 📬 **An optional daily summary email** tells you what was sorted
+
+It works with UCI's Google Workspace Gmail through the official Gmail API. It runs on
+your own computer, so your email never goes to anyone else's server.
 
 **Results on my own inbox:** sorted **1,194 emails** and archived **512 (43%)** of them
 as clutter. It also flagged **12 possible scams**, and **244 class and deadline emails**
@@ -116,6 +126,15 @@ bash schedule/uninstall.sh        # turn it off
 - **Your secrets stay on your machine.** `credentials.json` and `token.json` are git-ignored.
 
 ## Setup (one time)
+**What you need:** a Mac (Windows works too, but the daily schedule is Mac-only), Python 3,
+and your @uci.edu account.
+
+**Easiest way, if you know me:** send me your @uci.edu address. I'll add you as a tester of
+my Google Cloud app and send you its `credentials.json` privately. Then skip to step 5.
+Please don't post `credentials.json` anywhere, including GitHub, group chats and Discord.
+
+**Or set up your own Google Cloud project** (free, about 10 minutes):
+
 1. Go to https://console.cloud.google.com and create a project.
 2. Enable the **Gmail API**: APIs & Services → Library → Gmail API → Enable.
 3. Set up the **OAuth consent screen**: choose External and Testing, then add your
@@ -139,6 +158,11 @@ python sorter.py --apply --max 1000  # first run on a big inbox (default is 50)
 python sorter.py --email-summary     # also email yourself a summary
 pytest                               # run the tests
 ```
+
+**Make it yours:** the **Always Keep** rule in `rules.json` includes `"bei shift"` for my
+volunteer shift emails. Swap it for anything you never want archived, such as your job,
+lab or team emails. **Always do a dry run first** (`python sorter.py`) and read the list
+before you use `--apply`.
 
 All the sorting rules live in `rules.json`. Edit the senders and keywords there without
 touching any code:
