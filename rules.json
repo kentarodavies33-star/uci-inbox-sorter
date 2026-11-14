@@ -1,0 +1,61 @@
+{
+  "scam": {
+    "name": "Possible Scam",
+    "label": "UCI Sorter/Possible Scam",
+    "archive": false,
+    "threshold": 3,
+    "trusted_domains": [
+      "instructure.com", "canvaslms.com", "gradescope.com",
+      "joinhandshake.com", "google.com"
+    ],
+    "keywords": [
+      "remote assistant", "personal assistant", "research assistant position",
+      "part-time job", "part time job", "flexible hours", "work from home",
+      "gift card", "gift cards", "mobile deposit", "cashier's check", "e-check",
+      "kindly", "whatsapp", "text me", "dear student", "paid weekly",
+      "verify your account", "password expires", "mailbox full"
+    ],
+    "impersonation_words": [
+      "professor", "prof", "dr", "dean", "uci", "university", "department",
+      "financial aid", "helpdesk", "help desk", "it support", "oit"
+    ]
+  },
+  "categories": [
+    {
+      "name": "Always Keep",
+      "label": "UCI Sorter/Always Keep",
+      "archive": false,
+      "subject_starts_with": ["re:"],
+      "from_contains": ["zotalert"],
+      "subject_contains": ["bei shift", "microsoft 365"]
+    },
+    {
+      "name": "Important",
+      "label": "UCI Sorter/Important",
+      "archive": false,
+      "from_contains": ["instructure.com", "canvaslms.com", "gradescope", "registrar",
+                        "ofas", "financial aid"],
+      "subject_contains": ["grade", "grades", "exam", "midterm", "final exam",
+                           "enrollment", "financial aid", "assignment",
+                           "office hours", "canvas"]
+    },
+    {
+      "name": "Clubs & Events",
+      "label": "UCI Sorter/Clubs & Events",
+      "archive": true,
+      "from_contains": ["asuci", "campusgroups", "club"],
+      "subject_contains": ["club", "general meeting", "gbm", "rsvp", "free food",
+                           "social", "mixer", "info session", "tabling", "event",
+                           "events", "invited", "potluck", "screening", "workshop",
+                           "karaoke"]
+    },
+    {
+      "name": "Mass Mail",
+      "label": "UCI Sorter/Mass Mail",
+      "archive": true,
+      "has_unsubscribe": true,
+      "subject_contains": ["newsletter", "weekly", "digest", "survey", "announcement",
+                           "announcements", "in the news", "this week"]
+    }
+  ]
+}

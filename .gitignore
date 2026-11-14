@@ -1,0 +1,12 @@
+# Never commit your login secrets
+credentials.json
+token.json
+
+# Personal notes for Claude (not part of the project)
+CLAUDE.md
+
+# Python / tool clutter
+__pycache__/
+.pytest_cache/
+.venv/
+.DS_Store
